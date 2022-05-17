@@ -1,0 +1,29 @@
+repos:
+  - repo: local
+    hooks:
+      - id: flake8
+        name: Lint - flake8
+        language: system
+        types: [python]
+        entry: pipenv run flake8
+      - id: black
+        name: Format code - black
+        language: system
+        types: [python]
+        entry: pipenv run black --check
+      - id: isort
+        name: Format imports - isort
+        language: system
+        types: [python]
+        entry: pipenv run isort --check-only --recursive
+  - repo: local
+    hooks:
+      - id: blubracket
+        name: BluBracket
+        language: system
+        entry: blubracket pre-commit
+        stages:
+          - commit
+        verbose: true
+        always_run: true
+        pass_filenames: false
