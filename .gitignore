@@ -85,3 +85,6 @@ fabric.properties
 
 # ngrok
 **/ngrok.log
+
+# Output
+*.jsonl
