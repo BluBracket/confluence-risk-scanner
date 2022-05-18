@@ -84,9 +84,17 @@ class ConfluenceRiskScanner:
         page_id = page_data['id']
         content = page_data['body']['view']['value']
 
+        # Note 1: We get in the response from Confluence API as html, which BluBracket cli may not accurately
+        # detect risks because of the way they are formatted. So we want to parse the html to text for better detection.
+
+        # Note 2: We may still potentially miss some secrets because of the assignment operators.
+        # Since these aren't code files, it is not uncommon to have a secret in the following way
+        # Password - abc123
         soup = BeautifulSoup(content, 'html.parser')
 
-        formatted_content = soup.get_text(separator='\n')
+        # Using space as separator because if the risk identifier and value are formatted in a different way,
+        # they are parsed into two different lines when using a newline separator
+        formatted_content = soup.get_text(separator=' ')
 
         click.echo(f'scanning page {page_title}')
 
