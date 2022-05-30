@@ -1,6 +1,6 @@
+import json
 import logging
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,25 +13,23 @@ from click.exceptions import ClickException, Exit
 
 
 class ConfluenceRiskScanner:
-    def __init__(self, confluence_url, username, password) -> None:
+    def __init__(self, confluence_url: str, username: str, password: str, pagination_size: int) -> None:
+        self.confluence_url = confluence_url.rstrip('/')
+        self.pagination_size = pagination_size
         self.client = Confluence(
-            url=confluence_url,
+            url=self.confluence_url,
             username=username,
             password=password,
             api_version='cloud',
         )
 
-    def scan_page(self, page_id: int, out):
+    def scan_page(self, page_id: int, out) -> None:
         """
         Scans a single page in Confluence Cloud
 
         Args:
-            client: Atlassian Confluence API client
             page_id: Id of the page to scan
             out: file like object to output the results to
-
-        Returns:
-
         """
         try:
             # get the page content
@@ -41,17 +39,13 @@ class ConfluenceRiskScanner:
             # for this recipe we just want to print the exception and continue scanning
             logging.exception(f'Error while scanning page #{page_id}')
 
-    def scan_space(self, space_key: str, out):
+    def scan_space(self, space_key: str, out) -> None:
         """
         Scans all pages from a space in Confluence Cloud
 
         Args:
-            client: Atlassian Confluence API client
             space_key: Key of the space to scan
             out: file like object to output the results to
-
-        Returns:
-
         """
         try:
             self._scan_space(space_key, out)
@@ -62,7 +56,7 @@ class ConfluenceRiskScanner:
     def _scan_space(self, space_key: str, out):
 
         start = 0
-        limit = 10
+        limit = self.pagination_size
 
         # Iterate through all the pages in the response and scan each page
         while True:
@@ -70,7 +64,8 @@ class ConfluenceRiskScanner:
                 space_key=space_key, content_type='page', expand='body.view', start=start, limit=limit
             )
 
-            for page in response['results']:
+            pages = response.get('results') or []
+            for page in pages:
                 self._scan_page_content(page, out)
 
             next_link = response.get('_links', {}).get('next')
@@ -90,6 +85,9 @@ class ConfluenceRiskScanner:
         # Note 2: We may still potentially miss some secrets because of the assignment operators.
         # Since these aren't code files, it is not uncommon to have a secret in the following way
         # Password - abc123
+
+        # Note 3: Confluence uses curly double quotes by default and BluBracket CLI doesn't detect them.
+        # password = “abc123”
         soup = BeautifulSoup(content, 'html.parser')
 
         # Using space as separator because if the risk identifier and value are formatted in a different way,
@@ -143,11 +141,64 @@ class ConfluenceRiskScanner:
 
             # now have the file output, send to the final output file
             with open(cli_output_file_path, 'r') as cli_output_file:
-                shutil.copyfileobj(cli_output_file, out)
-                out.flush()
+                for secret_line in cli_output_file.readlines():
+                    #  each line is a valid json object/dictionary
+                    secret = json.loads(secret_line)
+
+                    # remove some fields that not super useful
+                    secret.pop('auto_dismiss', None)
+                    secret.pop('line1', None)
+                    secret.pop('line2', None)
+                    secret.pop('col1', None)
+                    secret.pop('col2', None)
+
+                    # add some new fields
+                    secret['page_title'] = page_title
+                    secret['page_id'] = page_id
+
+                    # Use tinyui link if present, otherwise use the webui link
+                    tinyui_link = page_data.get('_links', {}).get('tinyui')
+                    webui_link = page_data.get('_links', {}).get('webui')
+
+                    if tinyui_link:
+                        secret['page_link'] = f'{self.confluence_url}/wiki{tinyui_link}'
+                    elif webui_link:
+                        secret['page_link'] = f'{self.confluence_url}/wiki{webui_link}'
+
+                    # now ready to store the secret in out
+                    secret_json = json.dumps(secret)
+                    out.write(secret_json)
+                    out.write('\n')
+                    out.flush()
 
         finally:
             os.remove(cli_output_file_path)
+
+    def _transform_output(self, secret_line: str, page_data: dict) -> str:
+        #  each line is a valid json object/dictionary
+        secret = json.loads(secret_line)
+
+        # remove some fields that not useful
+        secret.pop('auto_dismiss', None)
+        secret.pop('line1', None)
+        secret.pop('line2', None)
+        secret.pop('col1', None)
+        secret.pop('col2', None)
+
+        # add some new fields that are useful
+        secret['page_title'] = page_data['title']
+        secret['page_id'] = page_data['id']
+
+        # Use tinyui link if present, otherwise use the webui link
+        tinyui_link = page_data.get('_links', {}).get('tinyui')
+        webui_link = page_data.get('_links', {}).get('webui')
+
+        if tinyui_link:
+            secret['page_link'] = f'{self.confluence_url}/wiki{tinyui_link}'
+        elif webui_link:
+            secret['page_link'] = f'{self.confluence_url}/wiki{webui_link}'
+
+        return json.dumps(secret)
 
 
 @click.command()
@@ -168,13 +219,19 @@ class ConfluenceRiskScanner:
     help='Key of the space to scan',
 )
 @click.option(
+    '--pagination-size',
+    type=click.INT,
+    default=10,
+    help='Maximum number of pages to scan at a time, only applicable when scanning a space',
+)
+@click.option(
     '--output',
     '-o',
     type=click.File("w"),
     default=sys.stdout,
     help='Output file name to store found risks. Defaults to stdout',
 )
-def scan_confluence(url: str, page_id: Optional[int], space_key: Optional[str], output):
+def scan_confluence(url: str, page_id: Optional[int], space_key: Optional[str], pagination_size: int, output):
     """
     Scans a page or space in Confluence Cloud for secrets using BluBracket CLI.
 
@@ -192,7 +249,9 @@ def scan_confluence(url: str, page_id: Optional[int], space_key: Optional[str], 
     if not username or not password:
         raise ClickException('Please set the ATLASSIAN_ACCOUNT_EMAIL and ATLASSIAN_API_TOKEN environment variables')
 
-    scanner = ConfluenceRiskScanner(confluence_url=url, username=username, password=password)
+    scanner = ConfluenceRiskScanner(
+        confluence_url=url, username=username, password=password, pagination_size=pagination_size
+    )
 
     if page_id:
         scanner.scan_page(page_id=page_id, out=output)

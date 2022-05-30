@@ -62,6 +62,20 @@ pipenv run python confluence_risk_scanner.py \
 
 To see more options `pipenv run python confluence_risk_scanner.py --help`
 
+## Limitations
+
+1. This recipe doesn't scan the history or attachments in a confluence page.
+
+1. This reciple doesn't detect the secrets in the following formats because 
+   of the current limitations of BluBracket CLI
+    ```
+    # Hyphen (-) operator is not natively supported by BluBracket CLI
+    Password - abc123!@#
+
+    # Curly quotes (“ ”) are also not supported by BluBracket CLI
+    password = “abc123!@#”
+    ```
+
 ## Modifying and contributing
 
 This Apache-licensed project is open for re-use and improvements by all.
