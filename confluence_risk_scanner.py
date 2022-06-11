@@ -11,6 +11,10 @@ from atlassian import Confluence
 from bs4 import BeautifulSoup
 from click.exceptions import ClickException, Exit
 
+import requests
+import base64
+from requests.structures import CaseInsensitiveDict
+
 
 class ConfluenceRiskScanner:
     def __init__(self, confluence_url: str, username: str, password: str, pagination_size: int) -> None:
@@ -22,6 +26,18 @@ class ConfluenceRiskScanner:
             password=password,
             api_version='cloud',
         )
+
+    def list_spaces(self, out):
+        """
+        Returns a list of global (non personal) Spaces
+        """
+
+        spaces = self.client.get_all_spaces(start=0, limit=500, expand=None)
+        result = {}
+        for space in spaces["results"]:
+            if space["type"] != "personal":
+                result[space["name"]] = space["key"]
+        click.echo(result)
 
     def scan_page(self, page_id: int, out) -> None:
         """
@@ -231,7 +247,14 @@ class ConfluenceRiskScanner:
     default=sys.stdout,
     help='Output file name to store found risks. Defaults to stdout',
 )
-def scan_confluence(url: str, page_id: Optional[int], space_key: Optional[str], pagination_size: int, output):
+@click.option(
+    '--get-spaces',
+    is_flag=True,
+    help='Return a list of all global spaces in Confluence',
+)
+def scan_confluence(
+    url: str, page_id: Optional[int], space_key: Optional[str], pagination_size: int, output, get_spaces: Optional[bool]
+):
     """
     Scans a page or space in Confluence Cloud for secrets using BluBracket CLI.
 
@@ -253,7 +276,9 @@ def scan_confluence(url: str, page_id: Optional[int], space_key: Optional[str], 
         confluence_url=url, username=username, password=password, pagination_size=pagination_size
     )
 
-    if page_id:
+    if get_spaces:
+        scanner.list_spaces(out=output)
+    elif page_id:
         scanner.scan_page(page_id=page_id, out=output)
     elif space_key:
         scanner.scan_space(space_key=space_key, out=output)
