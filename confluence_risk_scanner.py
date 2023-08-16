@@ -20,7 +20,6 @@ class ConfluenceRiskScanner:
             url=self.confluence_url,
             username=username,
             password=password,
-            api_version='cloud',
         )
 
     def scan_page(self, page_id: int, out) -> None:
@@ -142,31 +141,8 @@ class ConfluenceRiskScanner:
             # now have the file output, send to the final output file
             with open(cli_output_file_path, 'r') as cli_output_file:
                 for secret_line in cli_output_file.readlines():
-                    #  each line is a valid json object/dictionary
-                    secret = json.loads(secret_line)
-
-                    # remove some fields that not super useful
-                    secret.pop('auto_dismiss', None)
-                    secret.pop('line1', None)
-                    secret.pop('line2', None)
-                    secret.pop('col1', None)
-                    secret.pop('col2', None)
-
-                    # add some new fields
-                    secret['page_title'] = page_title
-                    secret['page_id'] = page_id
-
-                    # Use tinyui link if present, otherwise use the webui link
-                    tinyui_link = page_data.get('_links', {}).get('tinyui')
-                    webui_link = page_data.get('_links', {}).get('webui')
-
-                    if tinyui_link:
-                        secret['page_link'] = f'{self.confluence_url}/wiki{tinyui_link}'
-                    elif webui_link:
-                        secret['page_link'] = f'{self.confluence_url}/wiki{webui_link}'
-
                     # now ready to store the secret in out
-                    secret_json = json.dumps(secret)
+                    secret_json = self._transform_output(secret_line=secret_line, page_data=page_data)
                     out.write(secret_json)
                     out.write('\n')
                     out.flush()
@@ -194,9 +170,9 @@ class ConfluenceRiskScanner:
         webui_link = page_data.get('_links', {}).get('webui')
 
         if tinyui_link:
-            secret['page_link'] = f'{self.confluence_url}/wiki{tinyui_link}'
+            secret['page_link'] = f'{self.client.url}{tinyui_link}'
         elif webui_link:
-            secret['page_link'] = f'{self.confluence_url}/wiki{webui_link}'
+            secret['page_link'] = f'{self.client.url}{webui_link}'
 
         return json.dumps(secret)
 

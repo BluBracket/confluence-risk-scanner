@@ -1,6 +1,6 @@
-# Confluence Cloud Risk Scanner
+# Confluence Risk Scanner
 
-The easiest way to scan Atlassian Confluence Cloud for secrets, PII, and non-inclusive language.
+The easiest way to scan Atlassian Confluence Cloud/Server for secrets, PII, and non-inclusive language.
 
 This fully-functional solution uses the BluBracket CLI to do the risk detection heavy lifting,
 combined with open-source helper code written in Python to interact with CLI.
@@ -59,6 +59,8 @@ pipenv run python confluence_risk_scanner.py \
     --space-key <confluence space key> \
     --output result.jsonl
 ```
+
+Note: For Confluence Server, set `ATLASSIAN_ACCOUNT_EMAIL` to the username and `ATLASSIAN_API_TOKEN` to the password
 
 To see more options `pipenv run python confluence_risk_scanner.py --help`
 
